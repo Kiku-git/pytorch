@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ATen/Parallel.h"
-#include "ATen/TensorUtils.h"
+#include <ATen/Parallel.h>
+#include <ATen/TensorUtils.h>
 #include <limits>
 #include <utility>
 #include <cstring>
@@ -127,7 +127,7 @@ inline std::pair<int64_t, int64_t> collapse_dims(
  */
 
 inline Tensor sort_strides(Tensor& tensor_) {
-  IntList strides = tensor_.strides();
+  IntArrayRef strides = tensor_.strides();
   std::vector<int64_t> indices;
   indices.reserve(tensor_.ndimension());
   for (int64_t i = 0; i < tensor_.ndimension(); i++) {
@@ -156,12 +156,14 @@ struct strided_tensor_iter_fixed {
   strided_tensor_iter_fixed(Tensor& tensor, bool sort_strides = false)
       : data_(tensor.data<T>()) {
     std::memset(counter_, 0, sizeof(int64_t) * N);
-    std::memcpy(
-        sizes_, tensor.sizes().data(), tensor.ndimension() * sizeof(int64_t));
-    std::memcpy(
-        strides_,
-        tensor.strides().data(),
-        tensor.ndimension() * sizeof(int64_t));
+    if (tensor.dim() > 0) {
+      std::memcpy(
+          sizes_, tensor.sizes().data(), tensor.dim() * sizeof(int64_t));
+      std::memcpy(
+          strides_,
+          tensor.strides().data(),
+          tensor.dim() * sizeof(int64_t));
+    }
     dim_ = std::get<1>(collapse_dims(sizes_, strides_, tensor.ndimension()));
   }
 };

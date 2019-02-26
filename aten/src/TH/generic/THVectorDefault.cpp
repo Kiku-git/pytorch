@@ -1,8 +1,8 @@
 #ifndef TH_GENERIC_FILE
-#define TH_GENERIC_FILE "generic/THVectorDefault.cpp"
+#define TH_GENERIC_FILE "TH/generic/THVectorDefault.cpp"
 #else
 
-#include "../THRandom.h"
+#include <TH/THRandom.h>
 
 void THVector_(copy_DEFAULT)(scalar_t *x, const scalar_t *y, const ptrdiff_t n) {
   ptrdiff_t i = 0;
@@ -216,9 +216,13 @@ void THVector_(normal_fill_DEFAULT)(scalar_t *data,
 VECTOR_IMPLEMENT_FUNCTION(abs,labs)
 #endif /* long only part */
 
-#if defined(TH_REAL_IS_SHORT) || defined(TH_REAL_IS_INT)
+#if defined(TH_REAL_IS_SHORT) || defined(TH_REAL_IS_INT) || defined(TH_REAL_IS_CHAR)
 VECTOR_IMPLEMENT_FUNCTION(abs,abs)
 #endif /* int only part */
+
+#if defined(TH_REAL_IS_BYTE)
+VECTOR_IMPLEMENT_FUNCTION(abs,)
+#endif /* unsigned, so identity */
 
 
 /* floating point only now */

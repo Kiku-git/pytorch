@@ -1,5 +1,5 @@
-#include "ATen/DLConvertor.h"
-#include "ATen/Functions.h"
+#include <ATen/DLConvertor.h>
+#include <ATen/Functions.h>
 
 #include <iostream>
 #include <sstream>
@@ -36,6 +36,9 @@ static DLDataType getDLDataType(const Type& type) {
       break;
     case ScalarType::Half:
       dtype.code = DLDataTypeCode::kDLFloat;
+      break;
+    case ScalarType::Bool:
+      dtype.code = DLDataTypeCode::kDLUInt;
       break;
     case ScalarType::ComplexHalf:
       throw std::logic_error("ComplexHalf is not supported by dlpack");
@@ -152,7 +155,7 @@ DLManagedTensor* toDLPack(const Tensor& src) {
   atDLMTensor->tensor.deleter = &deleter;
   atDLMTensor->tensor.dl_tensor.data = src.data_ptr();
   int64_t device_id = 0;
-  if (src.type().is_cuda()) {
+  if (src.is_cuda()) {
     device_id = src.get_device();
   }
   atDLMTensor->tensor.dl_tensor.ctx = getDLContext(src.type(), device_id);
@@ -172,8 +175,8 @@ Tensor fromDLPack(const DLManagedTensor* src) {
     src->deleter(const_cast<DLManagedTensor*>(src));
   };
   return at::from_blob(src->dl_tensor.data,
-      IntList(src->dl_tensor.shape, src->dl_tensor.ndim),
-      IntList(src->dl_tensor.strides, src->dl_tensor.ndim),
+      IntArrayRef(src->dl_tensor.shape, src->dl_tensor.ndim),
+      IntArrayRef(src->dl_tensor.strides, src->dl_tensor.ndim),
       deleter,
       at::device(device_type).dtype(stype));
 }

@@ -41,13 +41,13 @@ struct PDist {
   // TODO This is an inefficient way to compite sign, and can be much faster
   // using native SSE instructions that should be added to Vec256.
   static inline Vec sign(Vec val) {
-    return vec256::min(vec256::max(Vec(0), val.ceil()), Vec(1)) +
-      vec256::min(vec256::max(Vec(-1), val.floor()), Vec(0));
+    return vec256::minimum(vec256::maximum(Vec(0), val.ceil()), Vec(1)) +
+      vec256::minimum(vec256::maximum(Vec(-1), val.floor()), Vec(0));
   }
 
   // Zero norm
   struct zdist_calc {
-    static inline Vec map(const Vec& diff, const Vec& p) { return vec256::min(diff.abs().ceil(), Vec(1)); }
+    static inline Vec map(const Vec& diff, const Vec& p) { return vec256::minimum(diff.abs().ceil(), Vec(1)); }
     static inline Vec red(const Vec& agg, const Vec& up) { return agg + up; }
     static inline scalar_t finish(const scalar_t agg, const scalar_t p) { return agg; }
   };
@@ -85,11 +85,11 @@ struct PDist {
   // Info norm
   struct idist_calc {
     static inline Vec map(const Vec& diff, const Vec& p) { return diff; }
-    static inline Vec red(const Vec& agg, const Vec& up) { return vec256::max(agg, up); }
+    static inline Vec red(const Vec& agg, const Vec& up) { return vec256::maximum(agg, up); }
     static inline scalar_t finish(const scalar_t agg, const scalar_t p) { return agg; }
     // TODO This backward pass uses a very complext expression to compute (diff
     // == dist) that could be much faster if using SSE instructions.
-    static inline Vec backward(const Vec& diff, const scalar_t grad, const scalar_t dist, const Vec& p) { return Vec(grad) * sign(diff) * (Vec(1) - vec256::min(Vec(1), (diff.abs() - Vec(dist)).abs().ceil())); }
+    static inline Vec backward(const Vec& diff, const scalar_t grad, const scalar_t dist, const Vec& p) { return Vec(grad) * sign(diff) * (Vec(1) - vec256::minimum(Vec(1), (diff.abs() - Vec(dist)).abs().ceil())); }
   };
 
   template <typename F>
@@ -101,14 +101,14 @@ struct PDist {
 
     scalar_t * const res_start = result.data<scalar_t>();
     int64_t combs = result.numel(); // n * (n - 1) / 2
-    const Vec pvec(p);
 
     // We conceptually iterate over tuples of (i, j, k) where i is the first
     // vector from the input, j is the second, and k is the result index. This
     // parallelizes over the range of k and infers what i and j are from the
     // value of k.
-    parallel_for(0, combs, internal::GRAIN_SIZE / (16 * m), [=, &pvec](int64_t k, int64_t end) {
-      float n2 = n - .5;
+    parallel_for(0, combs, internal::GRAIN_SIZE / (16 * m), [p, self_start, self_end, n, m, res_start, combs](int64_t k, int64_t end) {
+      const Vec pvec(p);
+      double n2 = n - .5;
       // The -1 accounts for floating point truncation issues
       int64_t i = static_cast<int64_t>((n2 - std::sqrt(n2 * n2 - 2 * k - 1)));
       int64_t j = k - n * i + i * (i + 1) / 2 + i + 1;
@@ -149,7 +149,55 @@ struct PDist {
   }
 
   template <typename F>
-  inline static void backward_down_column(const scalar_t * self_i, scalar_t * res_i, const scalar_t * grad_k, const scalar_t * dist_k, const Vec& pvec, int64_t n, int64_t m, int64_t gs, int64_t count = Vec::size) {
+  static void run_cdist_parallel(Tensor& result, const Tensor& t1, const Tensor& t2, const scalar_t p) {
+    const scalar_t * const t1_start = t1.data<scalar_t>();
+    const scalar_t * const t2_start = t2.data<scalar_t>();
+    int64_t r1 = t1.size(-2);
+    int64_t r2 = t2.size(-2);
+    int64_t m = t1.size(-1);
+
+    scalar_t * const res_start = result.data<scalar_t>();
+    int64_t total = r1 * r2;
+
+    parallel_for(0, total, internal::GRAIN_SIZE / (16 * m), [=](int64_t start, int64_t end) {
+      const Vec pvec(p);
+      scalar_t * res = res_start + start;
+      const scalar_t * const res_end = res_start + end;
+
+      int64_t k = start;
+      while (res != res_end) {
+        int64_t i = k / r2;
+        int64_t j = k % r2;
+        const scalar_t * self_i = t1_start + i * m;
+        const scalar_t * self_j = t2_start + j * m;
+
+        *res = F::finish(vec256::map2_reduce_all<scalar_t>(
+                [&pvec](Vec a, Vec b) { return F::map((a - b).abs(), pvec); },
+                F::red, self_i, self_j, m), p);
+
+        res += 1;
+        k++;
+      }
+    });
+  }
+
+  static void apply_cdist(Tensor& result, const Tensor& x1, const Tensor& x2, const scalar_t p) {
+    if (p == 0.0) {
+      run_cdist_parallel<zdist_calc>(result, x1, x2, p);
+    } else if (p == 1.0) {
+      run_cdist_parallel<odist_calc>(result, x1, x2, p);
+    } else if (p == 2.0) {
+      run_cdist_parallel<tdist_calc>(result, x1, x2, p);
+    } else if (std::isinf(p)) {
+      run_cdist_parallel<idist_calc>(result, x1, x2, p);
+    } else {
+      run_cdist_parallel<pdist_calc>(result, x1, x2, p);
+    }
+  }
+
+  // This does a backward pass down a Vec column of the input
+  template <typename F>
+  inline static void backward_down_column(const scalar_t * self_i, scalar_t * res_i, const scalar_t * grad_k, const scalar_t * dist_k, const Vec& pvec, int64_t n, int64_t m, int64_t gs, int64_t count = Vec::size()) {
     for (const scalar_t * const self_end = self_i + m * n; self_i != self_end - m; self_i += m, res_i += m) {
 
       const Vec self_vec_i = Vec::loadu(self_i, count);
@@ -177,7 +225,6 @@ struct PDist {
     const int64_t n = self.size(0);
     const int64_t m = self.size(1);
     const int64_t gs = grad.stride(0);
-    const Vec pvec(p);
 
     const scalar_t * const grad_start = grad.data<scalar_t>();
     const scalar_t * const dist_start = dist.data<scalar_t>();
@@ -187,17 +234,19 @@ struct PDist {
     // The only way to parallelize and avoid locking requires parallelizing
     // over the columns of the input, i.e. we compute the gradient for the
     // first section of each vector independentaly of the second section, etc.
-    at::parallel_for(0, m / Vec::size, internal::GRAIN_SIZE / (8 * n * n), [=, &pvec](int64_t l, int64_t end) {
-      const scalar_t * self_l = self_start + l * Vec::size;
-      scalar_t * res_l = res_start + l * Vec::size;
+    at::parallel_for(0, m / Vec::size(), internal::GRAIN_SIZE / (8 * n * n), [p, n, m, gs, grad_start, dist_start, self_start, res_start](int64_t l, int64_t end) {
+      const Vec pvec(p);
 
-      for (const scalar_t * const res_end = res_start + end * Vec::size; res_l != res_end; self_l += Vec::size, res_l += Vec::size) {
+      const scalar_t * self_l = self_start + l * Vec::size();
+      scalar_t * res_l = res_start + l * Vec::size();
+
+      for (const scalar_t * const res_end = res_start + end * Vec::size(); res_l != res_end; self_l += Vec::size(), res_l += Vec::size()) {
         backward_down_column<F>(self_l, res_l, grad_start, dist_start, pvec, n, m, gs);
       }
     });
-    const int64_t remainder = m % Vec::size;
+    const int64_t remainder = m % Vec::size();
     if (remainder) {
-      backward_down_column<F>(self_start + (m - remainder), res_start + (m - remainder), grad_start, dist_start, pvec, n, m, gs, remainder);
+      backward_down_column<F>(self_start + (m - remainder), res_start + (m - remainder), grad_start, dist_start, Vec(p), n, m, gs, remainder);
     }
   }
 
@@ -232,9 +281,18 @@ static void pdist_backward_kernel_impl(Tensor& result, const Tensor& grad, const
   });
 }
 
+static void cdist_kernel_impl(Tensor& result, const Tensor& x1, const Tensor& x2, const double p) {
+  AT_DISPATCH_FLOATING_TYPES(result.type(), "cdist", [&] {
+    PDist<scalar_t>::apply_cdist(result, x1, x2, p);
+  });
+}
+
+
+
 }  // anonymous namespace
 
 REGISTER_DISPATCH(pdist_forward_stub, &pdist_forward_kernel_impl);
 REGISTER_DISPATCH(pdist_backward_stub, &pdist_backward_kernel_impl);
+REGISTER_DISPATCH(cdist_stub, &cdist_kernel_impl);
 
 }}  // namespace at::native

@@ -1,7 +1,7 @@
-#include "ATen/ATen.h"
-#include "ATen/NativeFunctions.h"
-#include "ATen/native/SpectralOpsUtils.h"
-#include "ATen/Config.h"
+#include <ATen/ATen.h>
+#include <ATen/NativeFunctions.h>
+#include <ATen/native/SpectralOpsUtils.h>
+#include <ATen/Config.h>
 
 #if !AT_MKL_ENABLED()
 
@@ -9,9 +9,9 @@ namespace at { namespace native {
 
 Tensor _fft_mkl(const Tensor& input, int64_t signal_ndim,
                 bool complex_input, bool complex_output,
-                bool inverse, IntList checked_signal_sizes,
+                bool inverse, IntArrayRef checked_signal_sizes,
                 bool normalized, bool onesided,
-                IntList output_sizes) {
+                IntArrayRef output_sizes) {
   AT_ERROR("fft: ATen not compiled with MKL support");
 }
 
@@ -19,11 +19,11 @@ Tensor _fft_mkl(const Tensor& input, int64_t signal_ndim,
 
 #else // AT_MKL_ENABLED
 
-#include "ATen/ATen.h"
-#include "ATen/Config.h"
-#include "ATen/Dispatch.h"
-#include "ATen/Utils.h"
-#include "ATen/NativeFunctions.h"
+#include <ATen/ATen.h>
+#include <ATen/Config.h>
+#include <ATen/Dispatch.h>
+#include <ATen/Utils.h>
+#include <ATen/NativeFunctions.h>
 
 #include <algorithm>
 #include <vector>
@@ -162,9 +162,9 @@ static inline void _fft_fill_with_conjugate_symmetry_(Tensor& input,
 // MKL DFTI
 Tensor _fft_mkl(const Tensor& self, int64_t signal_ndim,
                 bool complex_input, bool complex_output,
-                bool inverse, IntList checked_signal_sizes,
+                bool inverse, IntArrayRef checked_signal_sizes,
                 bool normalized, bool onesided,
-                IntList output_sizes) {
+                IntArrayRef output_sizes) {
   int64_t batch = self.size(0);
   Tensor input = self;
   // real/imag dimension must aligned when viewed as of complex type
@@ -218,7 +218,7 @@ Tensor _fft_mkl(const Tensor& self, int64_t signal_ndim,
   } else {
     std::ostringstream ss;
     ss << "MKL FFT doesn't support tensor of type: "
-       << at::toString(input.type().scalarType());
+       << toString(input.type().scalarType());
     AT_ERROR(ss.str());
   }
   // signal type

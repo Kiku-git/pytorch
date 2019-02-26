@@ -1,9 +1,8 @@
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
-#include "ATen/ATen.h"
-#include "ATen/CPUApplyUtils.h"
-#include "test_assert.h"
-#include "test_seed.h"
+#include <ATen/ATen.h>
+#include <ATen/CPUApplyUtils.h>
+#include <ATen/test/test_assert.h>
 
 #include <iostream>
 using namespace std;
@@ -24,7 +23,7 @@ void fill_tensor(int64_t scalar, Tensor& t_) {
 // write the same type as we read (using a0, ..., aX-1) and we once write to
 // double (using a4 as a target). We also exercise on a zero_dim and empty
 // tensor.
-void test(Type& type, IntList shape, int64_t a = 0, int64_t b = 1) {
+void test(Type& type, IntArrayRef shape, int64_t a = 0, int64_t b = 1) {
   auto zero_dim = at::empty({}, type);
   zero_dim.fill_(2);
   zero_dim.exp_();
@@ -109,36 +108,36 @@ void test(Type& type, IntList shape, int64_t a = 0, int64_t b = 1) {
 
 // apply utils test 2-dim small contiguous
 TEST(ApplyUtilsTest, Contiguous2D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {2, 1}, -1, -1);
 }
 
 // apply utils test 2-dim small
 TEST(ApplyUtilsTest, Small2D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {2, 1});
 }
 
 // apply utils test 2-dim
 TEST(ApplyUtilsTest, _2D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {20, 10});
 }
 
 // apply utils test 3-dim
 TEST(ApplyUtilsTest, _3D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {3, 4, 2});
 }
 
 // apply utils test 3-dim medium
 TEST(ApplyUtilsTest, Medium3D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {3, 40, 2});
 }
 
 // apply utils test 10-dim
 TEST(ApplyUtilsTest, _10D) {
-  manual_seed(123, at::kCPU);
+  manual_seed(123);
   test(CPU(kDouble), {3, 4, 2, 5, 2, 1, 3, 4, 2, 3});
 }

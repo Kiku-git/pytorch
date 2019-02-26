@@ -744,6 +744,12 @@ DataParallel layers (multi-GPU, distributed)
 .. autoclass:: torch.nn.parallel.DistributedDataParallel
     :members:
 
+:hidden:`DistributedDataParallelCPU`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: torch.nn.parallel.DistributedDataParallelCPU
+    :members:
+
 
 Utilities
 ---------
@@ -1159,6 +1165,11 @@ Sparse functions
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: embedding_bag
+
+:hidden:`one_hot`
+~~~~~~~~~~~~~~~~~
+
+.. autofunction:: one_hot
 
 Distance functions
 ----------------------------------
